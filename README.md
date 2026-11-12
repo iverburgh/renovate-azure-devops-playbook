@@ -110,6 +110,8 @@ From the same monorepo, each on its own:
   configuration as code, deployed and rolled back together with the application.
 - [Domain-Driven Design in .NET](https://github.com/iverburgh/ddd-dotnet-playbook) — bounded
   contexts, aggregates, domain events and the outbox in a working .NET solution.
+- [Entra ID app registrations as code](https://github.com/iverburgh/entra-app-registrations-as-code-playbook) —
+  app registrations, roles and access as code.
 
 ## License
 
