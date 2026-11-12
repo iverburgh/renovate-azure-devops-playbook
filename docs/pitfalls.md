@@ -37,6 +37,21 @@ manager, leave it out of the list or use `"enabled": false` in a package rule.
 This is worth a fail-fast guard anywhere you build the list dynamically — see the managers override
 in [pipelines/renovate.yml](../pipelines/renovate.yml).
 
+### Presets copied from older examples fail the strict validator
+
+**Symptom.** `renovate-config-validator --strict` exits with `1` and prints a "Config migration
+diff", or warns that an option "can only be used in `customManagers`".
+
+**Cause.** Several option names in older blog posts and shared presets have been renamed:
+`managers` became `matchManagers`, `matchPackagePatterns` became `matchPackageNames` with a
+`/regex/` value, and `matchFiles` became `matchFileNames`. Renovate migrates them silently at run
+time, but `--strict` treats a needed migration as a failure. A regex manager (`matchStrings`,
+`datasourceTemplate`, `depNameTemplate`) put inside `packageRules` is simply invalid; it belongs in
+`customManagers`.
+
+**Fix.** Apply the migration diff the validator prints. And check whether you need the custom
+manager at all: the native `nuget` manager already reads the .NET SDK version from `global.json`.
+
 ### The bicep manager updates API versions, not modules
 
 The manager supports exactly one datasource, `azure-bicep-resource`, which updates the Azure REST

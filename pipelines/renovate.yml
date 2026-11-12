@@ -189,7 +189,13 @@ jobs:
           # in this step's env would never reach `dotnet restore`. customEnvVariables is the only way
           # through. Keeps stderr clean so a banner cannot invalidate an artifact update.
           RENOVATE_CUSTOM_ENV_VARIABLES: '{"DOTNET_NOLOGO":"1","DOTNET_CLI_TELEMETRY_OPTOUT":"1"}'
+          # Optional. Without a github.com token Renovate skips release notes for every dependency
+          # hosted on GitHub. Use a read-only token from any account, stored as a SECRET variable.
+          # Uncomment only once the variable exists: an undefined variable arrives as its own name.
+          # See ../docs/configuration.md.
+          # RENOVATE_GITHUB_COM_TOKEN: $(GithubComToken)
           npm_config_loglevel: error
+          # Must stay at debug: the notification step finds blocked branches through a DEBUG line.
           LOG_LEVEL: debug
 
       # Optional. Creates a work item per run and one per pull request, so dependency updates are

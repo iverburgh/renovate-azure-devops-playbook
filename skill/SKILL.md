@@ -61,6 +61,7 @@ only safe use of that variable.
 | Dependency Dashboard | Off. Unsupported on Azure DevOps |
 | Auto-merge | Off |
 | Auth | `System.AccessToken`, never a personal access token |
+| Linking pull requests to work items | `azureWorkItemId` for a fixed link only; the work item script when dependency work must show up on the board per run and per pull request |
 | Cooldown | `minimumReleaseAge` in a package rule on `matchDatasources: ["npm", "nuget"]`, never top-level; internal packages exempted with `null` in a later rule. *Not yet confirmed by a production run* |
 | Framework majors | LTS only. Move the runtime-family bound and the SDK bound together, and extend the `SYSLIB` range in `.editorconfig` |
 | Build fails on a deprecation (`CS0618`, `SYSLIB`) | Pin below the version that introduced it (default), or a scoped `#pragma` with a work item id when the update is needed now. Never `NoWarn`, lowered severity or `SuppressMessage` |
@@ -107,6 +108,9 @@ These produce no error, so an agent must check them deliberately.
   publish no release timestamp, so the updates stay pending forever.
 - **A secret pipeline variable is not in the step environment** unless mapped with `env:`, and a
   variable group not authorised for the pipeline fails only at run time.
+- **Without a github.com token, release notes are skipped** for every dependency hosted on GitHub
+  (`No github.com token has been configured`). Set `RENOVATE_GITHUB_COM_TOKEN` from a secret
+  variable; a read-only token from any account is enough. *Not used in our production runs.*
 
 ## Rules that are easy to get wrong
 
@@ -115,6 +119,12 @@ These produce no error, so an agent must check them deliberately.
 - `allowedVersions` and `matchUpdateTypes` must not appear in the same package rule.
 - `platform` is a global-only option; set `RENOVATE_PLATFORM` in the pipeline instead.
 - `baseBranches` was renamed to `baseBranchPatterns`; the strict validator fails on the old name.
+  The same goes for `managers` (now `matchManagers`), `matchPackagePatterns` (now
+  `matchPackageNames` with a `/regex/`) and `matchFiles` (now `matchFileNames`), which still turn up
+  in older presets.
+- Regex manager fields (`matchStrings`, `datasourceTemplate`, `depNameTemplate`) belong in
+  `customManagers`, never in `packageRules`. The .NET SDK in `global.json` needs no custom manager;
+  the native `nuget` manager reads it.
 - `matchPackageNames` with a bare name is an exact match, not a prefix.
 - `prConcurrentLimit` caps simultaneously open pull requests, not per-run creation. There is no
   per-run option; `prHourlyLimit` is the effective one.

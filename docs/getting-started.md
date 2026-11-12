@@ -96,6 +96,60 @@ Do not let the first real run be your first run. The `baseBranchOverride` parame
 because Renovate reads its config from the default branch, which makes ordinary branch testing
 useless. See [pre-merge-testing.md](pre-merge-testing.md).
 
+## 9. Optional: a github.com token for release notes
+
+Without a github.com token, Renovate skips release notes for every dependency whose source lives
+on GitHub, so those pull requests arrive without changelogs. See
+[configuration.md](configuration.md#release-notes-need-a-githubcom-token) for how to add one
+without breaking the run.
+
+## One pipeline per repository, or one for many
+
+The supplied pipeline updates exactly one repository: its own, through `RENOVATE_REPOSITORIES`.
+The configuration, the pipeline and the permissions all sit next to the code they govern, and the
+[pre-merge test](pre-merge-testing.md) assumes that layout.
+
+If you have many repositories, the other common layout is a central bot repository. It holds a
+single pipeline and the global configuration, and Renovate either works through an explicit list of
+repositories or finds them itself:
+
+```js
+// config.js in the bot repository
+module.exports = {
+  platform: 'azure',
+  autodiscover: true,
+  autodiscoverFilter: ['<project>/*'],
+};
+```
+
+Things to settle before you choose it:
+
+- **Shared rules go in a preset.** Put them in a `default.json` (or a named file such as
+  `dotnet.json`) in one repository. Each target repository then needs only
+  `{ "extends": ["local><project>/<config-repo>"] }`, or `local><project>/<config-repo>:dotnet` for
+  a named file. `local>` resolves presets on the platform Renovate is running against. Renovate has
+  deprecated using `renovate.json` as the name of a shared preset file. See
+  [shareable config presets](https://docs.renovatebot.com/config-presets/).
+- **Onboarding is on by default.** A repository without a config first gets an onboarding pull
+  request, and is not updated until that is merged. The `onboarding`, `onboardingConfig` and
+  `requireConfig` options control this; see the
+  [self-hosted configuration](https://docs.renovatebot.com/self-hosted-configuration/) reference.
+- **`autodiscoverFilter` set through an environment variable does not support commas inside a
+  filter.** Use a regex filter there, or set the option in `config.js`.
+- **The build service needs the four repository permissions from step 3 on every target
+  repository**, plus View project-level information. Which identity that is depends on the job
+  authorization scope. It is the project-scoped build service unless "Limit job authorization scope
+  to current project" is off, in which case it is the collection-scoped one.
+- **"Protect access to repositories in YAML pipelines" limits the job token to repositories the
+  job references** through a `checkout` step or a `uses` statement. Microsoft enables it by default
+  for organizations and projects created after May 2020. Either reference every target repository
+  in the pipeline, or accept that the token cannot reach the others. See
+  [job access tokens](https://learn.microsoft.com/azure/devops/pipelines/process/access-tokens).
+- **One token can then write to every repository**, and one broken run delays them all. That is
+  the trade-off for maintaining a single pipeline.
+
+We ran the per-repository layout only, so the playbook's pipelines and scripts assume it.
+
 ## Verify locally at any point
 
 ```powershell

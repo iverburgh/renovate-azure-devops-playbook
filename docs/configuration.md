@@ -47,6 +47,26 @@ wrong until you notice the backlog never shrinks. With grouping in place a run p
 three to six branches anyway, so the limit rarely binds. Zero concurrent means a backlog of open
 pull requests never starves a new run.
 
+## Release notes need a github.com token
+
+On any platform other than github.com, Renovate skips release notes for every dependency whose
+source repository is on github.com unless it has a token for github.com. The debug log says
+`No github.com token has been configured. Skipping release notes retrieval`, and the pull request
+body has no changelog. Many NuGet and npm packages keep their source on GitHub, so this affects a
+large share of updates.
+
+The fix is a personal access token for github.com, from any account, with read-only access to
+public data only. Pass it as `RENOVATE_GITHUB_COM_TOKEN`. It also raises the GitHub API rate limit
+for some of Renovate's other lookups. See
+[running Renovate](https://docs.renovatebot.com/getting-started/running/).
+
+Store it as a secret pipeline variable and map it explicitly in the step's `env:`. The pipeline
+includes the line commented out. Uncomment it only once the variable exists: an undefined variable
+arrives as its own name, and Renovate would then use the literal text `$(...)` as the token.
+
+We did not run with this token in production, so our pull requests had no release notes for
+GitHub-hosted packages.
+
 ## Which files get scanned
 
 ```json

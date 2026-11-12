@@ -59,6 +59,21 @@ each. All of them are explained properly in [docs/pitfalls.md](docs/pitfalls.md)
 - **The Dependency Dashboard does not work on Azure DevOps.** It needs issues with interactive
   checkboxes. Turn it off rather than relying on it.
 
+## Why Renovate
+
+We wanted one tool, with one configuration, to keep six kinds of references current: the .NET SDK in
+`global.json`, NuGet packages including their lock files, the Node version in `.nvmrc`, npm
+packages, Bicep resource API versions and Azure DevOps pipeline task versions. When we compared the
+options in mid-2025, Renovate was the only one that covered all six and ran self-hosted against
+Azure Repos. Its Bicep support is partial: it bumps resource API versions, not module references
+(see [pitfalls](docs/pitfalls.md#the-bicep-manager-updates-api-versions-not-modules)).
+
+The others each covered only part of the list. GitHub's Dependabot does not run against Azure Repos.
+The community port of it to Azure DevOps handled the SDK, NuGet and npm, but not Node, Bicep or
+pipeline tasks, and it has since been renamed and archived. dotnet-outdated covers NuGet only and
+opens no pull requests, and NuKeeper is archived. Tools change, so redo this comparison yourself
+before you choose one.
+
 ## Adapting this to your repository
 
 Nothing here is drop-in. Every file contains placeholders in angle brackets — `<your-pool>`,

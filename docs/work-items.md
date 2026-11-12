@@ -10,6 +10,18 @@ invisible on the board, which in practice means it is invisible in planning, whi
 get done. This makes dependency work show up where the rest of the work is, without anyone having to
 remember to create anything.
 
+## The built-in alternative: `azureWorkItemId`
+
+Renovate can link every pull request it creates to one existing work item. Set `azureWorkItemId`
+to that item's id. The build service then needs "Edit work items in this node" and "View work items
+in this node" on the item's area path; without them Renovate still creates the pull request, just
+without the link. See the [Azure DevOps platform page](https://docs.renovatebot.com/modules/platform/azure/#linking-a-work-item-to-the-pull-requests).
+
+That satisfies a branch policy requiring linked work items, and costs nothing. What it does not do
+is put new work on the board: the item is fixed, it does not follow iterations, and nothing tracks
+individual pull requests. The script below does that. Use the built-in option when a link is all
+you need.
+
 ## What it does
 
 | Trigger | Result |
