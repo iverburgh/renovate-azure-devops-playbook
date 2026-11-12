@@ -98,6 +98,19 @@ here for the Azure DevOps specifics.
   Lieben, and [the slides](https://github.com/eriklieben/presentations/blob/main/2024-12-27-dotnet-amsterdam-renovate-azdevops/renovate-azdevops-dep-update.pdf).
   The best end-to-end introduction to this specific combination that we found.
 
+## Related playbooks
+
+From the same monorepo, each on its own:
+
+- [Copilot on Azure DevOps](https://github.com/iverburgh/copilot-azure-devops-playbook) —
+  instructions, skills and agents, including agents that run dependency updates by hand.
+- [Path filters on Azure DevOps](https://github.com/iverburgh/azure-devops-path-filter-playbook) —
+  build only what a change touches, including the project files Renovate updates.
+- [Azure App Configuration](https://github.com/iverburgh/azure-app-configuration-playbook) —
+  configuration as code, deployed and rolled back together with the application.
+- [Domain-Driven Design in .NET](https://github.com/iverburgh/ddd-dotnet-playbook) — bounded
+  contexts, aggregates, domain events and the outbox in a working .NET solution.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
