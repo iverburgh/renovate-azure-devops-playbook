@@ -1,0 +1,5 @@
+node_modules/
+*.log
+TestResults/
+.renovate-cache/
+tools/forbidden-terms.local.txt

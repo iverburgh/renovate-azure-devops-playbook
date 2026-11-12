@@ -1,0 +1,6 @@
+# Copy to forbidden-terms.local.txt (git-ignored) and list the names that must never be published:
+# your organisation, products, teams, repositories, tenants. One regular expression per line,
+# matched case-insensitively. In CI, put the same lines in the FORBIDDEN_TERMS repository secret.
+#
+# \bcontoso\b
+# fabrikam-tenant

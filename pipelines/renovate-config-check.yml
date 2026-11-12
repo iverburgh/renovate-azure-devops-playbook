@@ -1,0 +1,64 @@
+# Renovate config check — pull request build validation
+#
+# Attach this pipeline to your default branch as a Branch Policy build validation, with path
+# filters on /renovate.json, /renovate.json5, /config.js and on the pipeline variables file that
+# holds the pinned Renovate version. Without the policy this never runs.
+#
+# Two blocking checks against the PR contents:
+#   1. renovate-config-validator --strict   (schema and syntax)
+#   2. a local dry run (--platform=local)   (the config behaves as intended; creates no PRs)
+#
+# Private-feed lookup failures are warnings during a local dry run and do not fail the build.
+
+name: '$(date:yy.M.d)$(rev:rr)'
+
+trigger: none
+pr: none
+
+variables:
+  - template: variables/renovate-version.yml
+
+pool:
+  vmImage: 'windows-latest'
+
+jobs:
+  - job: renovate_config_check
+    displayName: 'Renovate config check (validator + dry run)'
+    timeoutInMinutes: 30
+    workspace:
+      clean: all
+    steps:
+      # A shallow fetch is enough: both checks only read the files in the checkout.
+      - checkout: self
+        fetchDepth: 1
+        fetchTags: false
+        timeoutInMinutes: 10
+        retryCountOnTaskFailure: 2
+
+      # Renovate 44+ requires Node >= 24.
+      - task: UseNode@1
+        displayName: 'Install Node'
+        inputs:
+          versionSource: 'fromFile'
+          versionFilePath: '$(Build.SourcesDirectory)/.nvmrc'
+
+      - powershell: |
+          npx --yes --package renovate@$(RenovateVersion) -- renovate-config-validator --strict
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: 'Validate Renovate config (--strict)'
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          npm_config_loglevel: error
+
+      # DELIBERATELY ABSENT: RENOVATE_CONFIG_FILE. --platform=local already reads renovate.json from
+      # the checkout. Setting the variable as well loads the same file a second time as global
+      # config and merges customManagers and packageRules, which doubles the statistics and makes
+      # this step useless as review evidence. See ../docs/pitfalls.md.
+      - powershell: |
+          npx --yes renovate@$(RenovateVersion) --platform=local --onboarding=false --dry-run=full
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: 'Renovate dry run (--platform=local)'
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          npm_config_loglevel: error
+          LOG_LEVEL: debug

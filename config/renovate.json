@@ -1,0 +1,179 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Reference configuration for self-hosted Renovate on Azure DevOps. docs/configuration.md explains every rule; docs/pitfalls.md explains the ones that look wrong until you know why.",
+
+  "baseBranchPatterns": ["main"],
+  "timezone": "Europe/Amsterdam",
+  "automerge": false,
+  "enabled": true,
+
+  "dependencyDashboard": false,
+  "azureWorkItemType": "Task",
+
+  "separateMajorMinor": false,
+  "separateMinorPatch": false,
+
+  "schedule": ["* 0-4 * * 2"],
+  "updateNotScheduled": false,
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 10,
+
+  "enabledManagers": ["nuget", "npm", "bicep", "nvm", "custom.regex"],
+
+  "customManagers": [
+    {
+      "description": "Keeps the pinned Renovate version in the pipeline variables file up to date, so Renovate upgrades itself through the same review process as everything else.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^pipelines/variables/renovate-version\\.yml$/"],
+      "matchStrings": ["RenovateVersion:\\s*\"?(?<currentValue>\\d+\\.\\d+\\.\\d+)\"?"],
+      "depNameTemplate": "renovate",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "description": "Azure DevOps YAML task versions. The native azure-pipelines manager silently skips any file containing ${{ if }} or ${{ each }} expressions, which in our repository meant missing 38% of all task references. A regex manager has no such blind spot. The boundary after the version MUST be zero-width: with \\s the line ending becomes part of replaceString, which on a Windows agent is a CR that does not occur in the LF content the update is applied to. Do not use a lookahead either - RE2 supports neither lookahead nor lookbehind.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^pipelines/.+\\.ya?ml$/"],
+      "matchStrings": ["task:\\s*(?<depName>[A-Za-z0-9_.\\-]+)@(?<currentValue>\\d+)\\b"],
+      "datasourceTemplate": "azure-pipelines-tasks",
+      "versioningTemplate": "loose"
+    }
+  ],
+
+  "packageRules": [
+    {
+      "description": "Cooldown against supply-chain attacks: a compromised release is usually detected and pulled within days, so Renovate picks the newest version that is at least three days old. Keyed on the datasource, not the manager, so .config/dotnet-tools.json and the Renovate self-update are covered too. NEVER set minimumReleaseAge top-level: the azure-pipelines-tasks and azure-bicep-resource datasources publish no release timestamp, so those updates would stay pending forever. See docs/configuration.md.",
+      "matchDatasources": ["npm", "nuget"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Your own internal packages are trusted: no cooldown. Replace the prefix with yours. Must come AFTER the general rule (the last match wins) and must be null, which removes the setting, rather than '0 days'.",
+      "matchDatasources": ["nuget"],
+      "matchPackageNames": ["/^<YourCompany>\\./i"],
+      "minimumReleaseAge": null
+    },
+
+    {
+      "description": "All NuGet updates in one PR. With Central Package Management and CentralPackageTransitivePinningEnabled, any split (major/minor/patch) produces NU1109 downgrade conflicts because .NET packages carry tightly coupled transitive requirements. See docs/pitfalls.md.",
+      "matchManagers": ["nuget"],
+      "groupName": "nuget"
+    },
+
+    {
+      "description": "npm is not centrally pinned, so per-level grouping is safe here. Majors deliberately get their own PR per package so they can be reviewed one at a time.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor+patch"
+    },
+    {
+      "description": "Tightly coupled ecosystems must bump together or npm install fails with ERESOLVE. @mui/icons-material peer-depends on the matching @mui/material major.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["/^@mui\\//"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "mui"
+    },
+    {
+      "description": "Same reason: the TypeScript toolchain peer-depends on itself across packages.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": [
+        "typescript",
+        "typescript-eslint",
+        "eslint",
+        "eslint-plugin-react",
+        "/^@eslint\\//",
+        "/^@typescript-eslint\\//"
+      ],
+      "groupName": "typescript+eslint"
+    },
+    {
+      "description": "@vitest/coverage-v8 peer-depends on an exact vitest version; bumping them separately breaks lock file regeneration.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["vitest", "/^@vitest\\//"],
+      "groupName": "vitest"
+    },
+    {
+      "description": "The Playwright packages must move as one. When @playwright/test runs ahead of a sibling such as an experimental component-testing package, npm nests a second copy of playwright-core and the types from both copies become incompatible (TS2345 across every component test). Deliberately NO matchUpdateTypes: the coupling already breaks on a minor.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["playwright", "playwright-core", "/^@playwright\\//"],
+      "groupName": "playwright"
+    },
+
+    {
+      "description": "The bicep manager only updates Azure REST API versions of resources, never modules. Leave preview API versions alone: they are chosen deliberately and often behave differently from their stable counterpart.",
+      "matchManagers": ["bicep"],
+      "matchCurrentValue": "/-(preview|beta|alpha)$/",
+      "enabled": false
+    },
+    {
+      "description": "One PR for all Bicep API versions. Splitting per resource provider multiplies build fan-out rather than isolating it, because shared modules are referenced by nearly every pipeline. maxMajorIncrement 0 removes the default limit of 500, which for date-based API versioning means roughly five months per step instead of jumping to the latest.",
+      "matchManagers": ["bicep"],
+      "groupName": "bicep",
+      "maxMajorIncrement": 0
+    },
+
+    {
+      "description": "Guard rail, not a temporary pin. Renovate does not filter NuGet on target framework (constraintsFiltering does not support the nuget datasource), so without this rule a new .NET major would immediately be proposed for packages our TFM cannot use.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": [
+        "/^Microsoft\\.AspNetCore\\./",
+        "/^Microsoft\\.Extensions\\./",
+        "/^Microsoft\\.EntityFrameworkCore/",
+        "/^System\\./",
+        "Microsoft.NETCore.App",
+        "Microsoft.AspNetCore.App"
+      ],
+      "allowedVersions": "<11"
+    },
+
+    {
+      "description": "EXAMPLE of the temporary-pin pattern — replace with your own. Every pin states the reason AND the work item that lifts it, so it cannot quietly become permanent. Refit 15 reworked IApiResponse.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Refit", "Refit.HttpClientFactory", "Refit.Xml"],
+      "allowedVersions": "<9"
+    },
+    {
+      "description": "EXAMPLE, and the more instructive one: this is NOT a SemVer major bump. A '<major+1' pin would not have stopped it. Always take the real target version from a dry run before choosing a bound.",
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Microsoft.Playwright", "Microsoft.Playwright.NUnit"],
+      "allowedVersions": "<1.60"
+    },
+    {
+      "description": "EXAMPLE of a family pin, for when a group cannot help: one package of a family stops releasing while the rest moves on, so there is nothing to move together with. Pin the WHOLE family below the version the laggard lacks, and lift it in the work item that removes the dependency on that package.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["playwright", "playwright-core", "/^@playwright\\//"],
+      "allowedVersions": "<1.63"
+    },
+
+    {
+      "description": "The SDK stays on the current LTS major. Moving up touches the runtime, the TFM and the build agents at once, so it is its own piece of work rather than a routine update.",
+      "matchDepNames": ["dotnet-sdk"],
+      "allowedVersions": "/^10\\./"
+    },
+    { "matchDepNames": ["dotnet-sdk"], "groupName": "dotnet-sdk" },
+
+    {
+      "description": "Node stays on its current LTS line. Note the 'v?': the node-version datasource returns versions WITH a v-prefix, so a pin of /^24\\./ filters everything away silently — no updates, no error, for months.",
+      "matchDepNames": ["node"],
+      "allowedVersions": "/^v?24\\./"
+    },
+    { "matchDepNames": ["node"], "groupName": "node" },
+
+    { "matchDepNames": ["renovate"], "groupName": "renovate" },
+
+    {
+      "description": "Azure DevOps expects only the major number in a task reference (task: AzureCLI@3). Without this the datasource proposes values like CopyFiles@2.279.0, which are not valid task references.",
+      "matchDatasources": ["azure-pipelines-tasks"],
+      "extractVersion": "^(?<version>\\d+)"
+    },
+    {
+      "description": "Organisation-internal tasks are not on the public Marketplace and cannot be resolved. Replace the prefix with your own; without this rule every internal task produces a lookup failure.",
+      "matchDatasources": ["azure-pipelines-tasks"],
+      "matchPackageNames": ["/^<YOUR-TASK-PREFIX>-/"],
+      "enabled": false
+    },
+    {
+      "description": "Group on the datasource, not on the manager. Both custom managers report as 'regex' in the stats, so matchManagers: ['regex'] would sweep in the Renovate self-update as well.",
+      "matchDatasources": ["azure-pipelines-tasks"],
+      "groupName": "azdo-tasks"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-config:
+    name: Renovate config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Validate renovate.json (repository mode)
+        shell: pwsh
+        run: |
+          # The pinned version is the one Renovate keeps up to date, so CI follows it automatically.
+          $pin = (Select-String -Path pipelines/variables/renovate-version.yml -Pattern 'RenovateVersion:\s*"?([\d.]+)"?').Matches[0].Groups[1].Value
+          Write-Host "Validating against Renovate $pin"
+
+          # The validator must run with NO file argument. Given a path it switches to global-config
+          # mode, which accepts settings that are illegal in a repository config - verified: a config
+          # containing "platform" passes with a path and fails without one. Since the reference config
+          # lives under config/, copy it to a working directory named renovate.json.
+          $work = Join-Path ([IO.Path]::GetTempPath()) 'renovate-config-check'
+          New-Item -ItemType Directory -Path $work -Force | Out-Null
+          Copy-Item config/renovate.json (Join-Path $work 'renovate.json') -Force
+
+          Push-Location $work
+          npx --yes --package "renovate@$pin" -- renovate-config-validator --strict
+          $code = $LASTEXITCODE
+          Pop-Location
+          exit $code
+        env:
+          npm_config_loglevel: error
+
+  test-scripts:
+    name: PowerShell tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module Pester -MinimumVersion 5.5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run Pester
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester -Path ./scripts -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
+
+  leak-check:
+    name: No internal references
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan for organisation-specific references
+        shell: pwsh
+        run: ./tools/Test-NoInternalReferences.ps1
+        env:
+          # One regular expression per line. Kept in a secret so the names themselves are never published.
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+
+  links:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check relative links and anchors
+        shell: pwsh
+        run: ./tools/Test-DocumentationLinks.ps1

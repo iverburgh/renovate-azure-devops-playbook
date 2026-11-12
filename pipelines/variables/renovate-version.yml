@@ -1,0 +1,6 @@
+# Pinned Renovate version, used by both pipelines as $(RenovateVersion).
+#
+# The custom regex manager in renovate.json matches this exact line, so Renovate proposes its own
+# upgrades as a normal reviewed pull request. Keep the format `RenovateVersion: "<x.y.z>"`.
+variables:
+  RenovateVersion: "44.224.2"

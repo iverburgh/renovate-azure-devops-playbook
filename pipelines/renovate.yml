@@ -1,0 +1,238 @@
+# Renovate — scheduled dependency scan
+#
+# Runs weekly during the night and can be started manually. Renovate only ever proposes changes as
+# a pull request against the default branch.
+#
+# Documentation: ../docs/getting-started.md and ../docs/pitfalls.md
+#
+# Required permissions for the build service identity (Project Settings > Repositories > Security):
+#   Contribute, Contribute to pull requests, Create branch, Read
+#   Project-level: View project-level information
+#   Private Azure Artifacts feeds: Packaging Read (Reader)
+#   Only with the work item step: create and edit work items in the target area path
+# Nothing more: no delete rights, no Bypass policies, no Force push.
+# Authorisation runs entirely through System.AccessToken. Do not use a personal access token.
+
+parameters:
+  # Empty = normal behaviour (Renovate scans the default branch).
+  # Filled = pre-merge test: Renovate reads config AND dependencies from that branch, so you can
+  # validate a config change that has not been merged yet. See ../docs/pre-merge-testing.md.
+  - name: baseBranchOverride
+    displayName: 'Base branch override (empty = default branch)'
+    type: string
+    default: ''
+  # Limits a pre-merge test run to specific managers, comma separated (e.g. 'bicep' or 'nuget,npm').
+  # Only takes effect together with baseBranchOverride. Empty = all managers from renovate.json.
+  - name: managersOverride
+    displayName: 'Managers override (empty = all; e.g. bicep or nuget,npm)'
+    type: string
+    default: ''
+
+name: '$(date:yy.M.d)$(rev:rr)'
+
+schedules:
+  # Cron is UTC. Pick a window that matches the "schedule" in renovate.json — if the pipeline starts
+  # outside Renovate's own schedule and updateNotScheduled is false, the run finds updates and then
+  # creates nothing.
+  - cron: '0 0 * * 2'
+    displayName: 'Renovate - weekly, Monday night into Tuesday'
+    branches:
+      include:
+        - main
+    always: true
+
+trigger: none
+pr: none
+
+variables:
+  # The Renovate version is pinned in one place so the self-update custom manager can bump it.
+  - template: variables/renovate-version.yml
+  # The webhook URL is a secret. Keep it in a variable group with the lock switched on, and authorise
+  # the group for this pipeline. See docs/notifications.md.
+  # - group: <your-pipeline-secrets>
+
+# A Windows agent. There is no bash, so every step below is powershell or pwsh.
+# A self-hosted pool works equally well; replace this block with `pool: <your-pool>`.
+pool:
+  vmImage: 'windows-latest'
+
+jobs:
+  - job: renovate
+    displayName: 'Renovate dependency scan'
+    timeoutInMinutes: 60
+    workspace:
+      clean: all
+    steps:
+      # Renovate clones the repository itself; this checkout only provides .nvmrc and the scripts.
+      # A shallow fetch without tags keeps it fast on a large history.
+      - checkout: self
+        fetchDepth: 1
+        fetchTags: false
+        persistCredentials: true
+        timeoutInMinutes: 10
+        retryCountOnTaskFailure: 2
+
+      # Renovate 44+ requires Node >= 24. Reading it from .nvmrc keeps the agent and the repository
+      # on the same version, and lets the nvm manager bump both at once.
+      - task: UseNode@1
+        displayName: 'Install Node'
+        inputs:
+          versionSource: 'fromFile'
+          versionFilePath: '$(Build.SourcesDirectory)/.nvmrc'
+
+      # Required so Renovate can regenerate packages.lock.json via dotnet restore.
+      # Without an SDK on the agent the PR arrives without lock files and with an
+      # "Artifact update problem" comment. Omit this step if you have no .NET projects.
+      - task: UseDotNet@2
+        displayName: 'Install .NET SDK (global.json)'
+        inputs:
+          packageType: sdk
+          useGlobalJson: true
+
+      # The first dotnet invocation after a new SDK version prints its first-run banner to STDERR.
+      # Renovate treats non-empty stderr as a failed artifact update and discards the lock files of
+      # the whole scope, even though the restore succeeded. This step absorbs the banner beforehand.
+      # See ../docs/pitfalls.md. Omit together with the step above if you have no .NET projects.
+      - powershell: |
+          dotnet --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: 'Warm up the .NET SDK'
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          DOTNET_NOLOGO: 1
+          DOTNET_CLI_TELEMETRY_OPTOUT: 1
+
+      # Quality gate: an invalid renovate.json fails the build here rather than halfway through a run.
+      - powershell: |
+          npx --yes --package renovate@$(RenovateVersion) -- renovate-config-validator --strict
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: 'Validate Renovate config (gate)'
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          npm_config_loglevel: error
+
+      # Records the boundary for "new in this run" in the notification. System.PipelineStartTime is
+      # fragile (no offset, or a culture-specific format, silently empties that section). Written as an
+      # output variable so it also survives moving the notification to its own job.
+      - pwsh: |
+          $start = [datetime]::UtcNow.ToString('o', [cultureinfo]::InvariantCulture)
+          Write-Host "##vso[task.setvariable variable=RenovateRunStartTime;isOutput=true]$start"
+        name: runstart
+        displayName: 'Record the start of the Renovate run'
+
+      - pwsh: |
+          $override = "$env:BASE_BRANCH_OVERRIDE".Trim()
+          if ($override) {
+            Write-Host "Base branch override active - faithful pre-merge test using the config of: $override"
+            # Renovate reads the repository config from the DEFAULT branch, always. Overriding
+            # baseBranchPatterns alone is not enough: a rule on the default branch still wins.
+            # RENOVATE_FORCE has the highest priority, so we push the COMPLETE config of this branch
+            # through it, plus a re-enable rule and no schedule. Limits go to 0 so the test shows
+            # every resulting PR instead of being throttled.
+            $force = Get-Content "$env:BUILD_SOURCESDIRECTORY/renovate.json" -Raw | ConvertFrom-Json
+            $managers = @($force.enabledManagers)
+            $requested = @("$env:MANAGERS_OVERRIDE".Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($requested.Count -gt 0) {
+              # Fail fast on a typo: an EMPTY enabledManagers means ALL managers in Renovate.
+              $unknown = @($requested | Where-Object { $_ -notin $managers })
+              if ($unknown.Count -gt 0) {
+                Write-Host "##vso[task.logissue type=error]Unknown manager(s): $($unknown -join ', '). Choose from: $($managers -join ', ')."
+                exit 1
+              }
+              $managers = $requested
+              Write-Host "Managers limited to: $($managers -join ', ')"
+            }
+            $reenable = [pscustomobject]@{ matchManagers = @($managers); enabled = $true }
+            $force.enabledManagers    = @($managers)
+            $force.packageRules       = @($reenable) + @($force.packageRules)
+            $force.baseBranchPatterns = @($override)
+            $force.enabled            = $true
+            $force.schedule           = @()
+            $force.prConcurrentLimit  = 0
+            $force.prHourlyLimit      = 0
+            $env:RENOVATE_FORCE = $force | ConvertTo-Json -Depth 20 -Compress
+            Write-Host "RENOVATE_FORCE=$($env:RENOVATE_FORCE)"
+          }
+          git config --global user.email 'renovate-bot@example.com'
+          git config --global user.name 'Renovate Bot'
+          # The agent executes any ##vso[...] command that appears in step output, including
+          # mid-line. Renovate logs the contents of matched files at debug level, so a pipeline YAML
+          # containing such a command literally will have it executed by the agent. Neutralise every
+          # occurrence - anchoring on line start is not enough. See ../docs/pitfalls.md.
+          #
+          # Tee-Object keeps a copy of the log for the notification step, which uses it to detect
+          # branches Renovate skipped. It preserves $LASTEXITCODE, so the check below still works.
+          npx --yes renovate@$(RenovateVersion) 2>&1 |
+            ForEach-Object { "$_" -replace '##(?=(vso)?\[)', '# #' } |
+            Tee-Object -FilePath "$env:AGENT_TEMPDIRECTORY/renovate.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        displayName: 'Run Renovate'
+        env:
+          BASE_BRANCH_OVERRIDE: ${{ parameters.baseBranchOverride }}
+          MANAGERS_OVERRIDE: ${{ parameters.managersOverride }}
+          RENOVATE_PLATFORM: azure
+          RENOVATE_ENDPOINT: $(System.CollectionUri)
+          RENOVATE_TOKEN: $(System.AccessToken)
+          # Without this Renovate reports "No repositories found" and exits successfully.
+          RENOVATE_REPOSITORIES: $(System.TeamProject)/$(Build.Repository.Name)
+          # DELIBERATELY ABSENT: RENOVATE_CONFIG_FILE. Renovate already reads renovate.json from the
+          # default branch. Pointing this variable at that same file loads it a second time as
+          # global config and MERGES the arrays, which duplicates customManagers and packageRules.
+          # In production that made file edits disappear from the PR. See ../docs/pitfalls.md.
+          #
+          # Use the Node and .NET already installed on the agent instead of a runtime install.
+          RENOVATE_BINARY_SOURCE: global
+          # Feed authentication for private Azure Artifacts feeds, needed for both lookups and lock
+          # file regeneration. Secrets do not belong in renovate.json, hence the environment variable.
+          RENOVATE_HOST_RULES: '[{"hostType":"nuget","matchHost":"pkgs.dev.azure.com","username":"apikey","password":"$(System.AccessToken)"},{"hostType":"npm","matchHost":"pkgs.dev.azure.com","username":"apikey","password":"$(System.AccessToken)"}]'
+          # Renovate passes child processes a FIXED environment allow-list, so setting DOTNET_NOLOGO
+          # in this step's env would never reach `dotnet restore`. customEnvVariables is the only way
+          # through. Keeps stderr clean so a banner cannot invalidate an artifact update.
+          RENOVATE_CUSTOM_ENV_VARIABLES: '{"DOTNET_NOLOGO":"1","DOTNET_CLI_TELEMETRY_OPTOUT":"1"}'
+          npm_config_loglevel: error
+          LOG_LEVEL: debug
+
+      # Optional. Creates a work item per run and one per pull request, so dependency updates are
+      # visible on the board. Remove this step if you do not want that. See ../docs/work-items.md.
+      # succeededOrFailed: Renovate can create PRs and fail afterwards; those PRs still need a work item.
+      - task: PowerShell@2
+        # The name makes the run item id addressable as governance.RenovateRunItemId.
+        name: governance
+        displayName: 'Work item governance (run item + per-PR tasks)'
+        condition: succeededOrFailed()
+        inputs:
+          targetType: inline
+          pwsh: true
+          # PowerShell@2 dot-sources the script, so the entry point must be called explicitly.
+          script: |
+            . '$(Build.SourcesDirectory)/scripts/New-RenovateWorkItems.ps1'
+            Invoke-Main
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+      # Optional. Posts one message per run to a chat channel, including for an empty run and for a
+      # failed one. See ../docs/notifications.md; remove this step if you do not want it.
+      #
+      # always(), not succeededOrFailed(): the governance step above can itself stumble, and the
+      # notification should still go out. This is the step that tells people a run happened at all.
+      - task: PowerShell@2
+        displayName: 'Send run notification'
+        condition: always()
+        inputs:
+          targetType: inline
+          pwsh: true
+          script: |
+            . '$(Build.SourcesDirectory)/scripts/Send-RenovateTeamsNotification.ps1'
+            Invoke-TeamsNotification
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          # Store the URL as a SECRET pipeline variable or in a variable group backed by a key
+          # vault. Anyone who has it can post into your channel.
+          RENOVATE_NOTIFICATION_WEBHOOK_URL: $(RenovateNotificationWebhookUrl)
+          RENOVATE_LOG_PATH: $(Agent.TempDirectory)/renovate.log
+          # Recorded by the 'runstart' step; decides what counts as "new in this run".
+          RENOVATE_RUN_START_TIME: $(runstart.RenovateRunStartTime)
+          # Set by the 'governance' step. An output variable is not mapped to the environment by its
+          # plain name, so it is passed explicitly. Without the governance step the macro stays
+          # unexpanded, the script reads it as 0 and the message simply has no work item link.
+          RENOVATERUNITEMID: $(governance.RenovateRunItemId)
