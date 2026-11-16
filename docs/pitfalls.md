@@ -162,6 +162,15 @@ after you add a pin, that is a signal the pin is too tight, not that it worked.
 Not a prefix. List `Refit`, `Refit.HttpClientFactory` and `Refit.Xml` separately. The upside is that
 it will not accidentally catch something like `AspNetCore.HealthChecks.Azure.Storage.Blobs`.
 
+### A central entry outlives the package that needed it
+
+Renovate updates every `PackageVersion` in `Directory.Packages.props`. It never checks whether a
+project still references it. Remove the last reference and the entry stays, and Renovate keeps
+updating it in the NuGet group pull request. The same goes for a transitive pin whose parent has
+since caught up: it does nothing, but it still looks like a security floor and still gets updates.
+Neither breaks a build, so nobody notices. A [package guard](package-hygiene.md) on every pull
+request that touches package files catches both.
+
 ---
 
 ## Pipeline

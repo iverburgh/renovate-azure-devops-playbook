@@ -1,0 +1,46 @@
+# Package guard — pull request build validation
+#
+# Checks central package hygiene with ../scripts/Test-PackageHygiene.ps1: dead PackageVersion
+# entries, orphaned packages.lock.json files and Central Package Management bypasses fail the
+# build; pins without effect and stale allowlist entries are warnings. See
+# ../docs/package-hygiene.md.
+#
+# Attach this pipeline to your default branch as a Branch Policy build validation. Without the
+# policy this never runs. Give the policy a path filter, so the guard only runs when package
+# files change:
+#
+#   /Directory.Packages.props;*.csproj;*.props;*.targets;*/packages.lock.json;/scripts/Test-PackageHygiene.ps1;/config/package-hygiene-allowlist.json
+#
+# In a policy path filter '*' also crosses folders, so '*.csproj' covers every project file.
+# Add '*.fsproj', '*.vbproj' or '*.sqlproj' if you use them. Renovate pull requests touch these
+# files too, so they get the same check.
+
+name: '$(date:yy.M.d)$(rev:rr)'
+
+trigger: none
+pr: none
+
+# Any agent with PowerShell 7.2+ and git works.
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: package_guard
+    displayName: 'Package guard (central package hygiene)'
+    timeoutInMinutes: 10
+    workspace:
+      clean: all
+    steps:
+      # A shallow fetch is enough: the guard only reads tracked files in the checkout.
+      - checkout: self
+        fetchDepth: 1
+        fetchTags: false
+        timeoutInMinutes: 10
+        retryCountOnTaskFailure: 2
+
+      # Report only. -Fix is for a developer machine; it cannot be combined with -Ci.
+      - pwsh: |
+          & '$(Build.SourcesDirectory)/scripts/Test-PackageHygiene.ps1' -RepositoryRoot '$(Build.SourcesDirectory)' -Ci
+          exit $LASTEXITCODE
+        displayName: 'Check central package hygiene'
+        workingDirectory: $(Build.SourcesDirectory)

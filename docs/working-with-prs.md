@@ -101,6 +101,9 @@ something else falls over. This is the most common reason a Renovate pull reques
    not application work.
 4. A pull request touching many pipeline files starts nearly every validation build at once. Do not
    schedule that at a busy moment.
+5. **The package guard fails** — `[dead-entry]`, `[orphaned-lock-file]` or `[cpm-bypass]`. A
+   Renovate pull request changes versions, not which packages exist, so the problem is already on
+   the default branch. Fix it there; see [package-hygiene.md](package-hygiene.md).
 
 ## 5. The lock file was not updated
 

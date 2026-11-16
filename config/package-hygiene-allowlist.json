@@ -1,0 +1,14 @@
+{
+  "$comment": "Exceptions for the package guard (scripts/Test-PackageHygiene.ps1). Each entry allows CPM bypasses in files matching 'path' (glob: * and ? stay in one folder, ** crosses folders). 'condition' is optional; when set, the bypass must sit under exactly that MSBuild Condition. 'reason' is mandatory: say why the exception exists and when it can go. The guard warns about entries that no longer match anything.",
+  "cpmBypass": [
+    {
+      "path": "src/Functions/Directory.Build.props",
+      "condition": "'$(MSBuildProjectName)' == 'WorkerExtensions'",
+      "reason": "The Azure Functions isolated worker SDK generates a hidden WorkerExtensions project during build and restores it with its own inline versions. Central Package Management is switched off for that generated project only."
+    },
+    {
+      "path": "tools/legacy/**",
+      "reason": "Legacy build tooling on a non-SDK project format that cannot import Directory.Packages.props. Remove this entry when the tooling moves to an SDK-style project."
+    }
+  ]
+}

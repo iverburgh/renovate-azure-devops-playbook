@@ -12,6 +12,7 @@ for the first three steps and rather longer for step 4, which is where the actua
 | `pipelines/renovate-config-check.yml` | same |
 | `pipelines/variables/renovate-version.yml` | keep it next to the pipelines |
 | `scripts/*` | optional; see steps 6 and 7 |
+| `pipelines/package-guard.yml`, `scripts/Test-PackageHygiene.ps1`, `config/package-hygiene-allowlist.json` | optional; see step 10 |
 
 Then search for `<` and replace every placeholder: `<org>`, `<feed>`, `<your-pool>`,
 `<YOUR-TASK-PREFIX>`. The leak-check script in `tools/` will find them for you if you point it at
@@ -102,6 +103,14 @@ Without a github.com token, Renovate skips release notes for every dependency wh
 on GitHub, so those pull requests arrive without changelogs. See
 [configuration.md](configuration.md#release-notes-need-a-githubcom-token) for how to add one
 without breaking the run.
+
+## 10. Optional: a package guard
+
+With Central Package Management, Renovate keeps every entry in `Directory.Packages.props` current,
+used or not. `scripts/Test-PackageHygiene.ps1` fails a pull request on dead entries, orphaned lock
+files and unreviewed bypasses of central versions. Attach `pipelines/package-guard.yml` as a second
+build validation policy, with the path filter from its header. See
+[package-hygiene.md](package-hygiene.md).
 
 ## One pipeline per repository, or one for many
 

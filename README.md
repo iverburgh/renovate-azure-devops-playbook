@@ -25,6 +25,7 @@ by a production run. The docs say so where it matters.
 | Test a config change before merging it | [docs/pre-merge-testing.md](docs/pre-merge-testing.md) |
 | Put dependency work on the board | [docs/work-items.md](docs/work-items.md) |
 | Post a run summary to a chat channel | [docs/notifications.md](docs/notifications.md) |
+| Keep `Directory.Packages.props` free of dead entries and bypasses | [docs/package-hygiene.md](docs/package-hygiene.md) |
 | **Avoid our mistakes** | **[docs/pitfalls.md](docs/pitfalls.md)** |
 
 If you read only one file, read the pitfalls.
@@ -32,9 +33,9 @@ If you read only one file, read the pitfalls.
 ## What's in here
 
 ```
-config/renovate.json     Annotated configuration you can adapt
-pipelines/               The scheduled run and the PR config-check gate
-scripts/                 Work item governance and Teams notifications (PowerShell + Pester)
+config/                  Annotated renovate.json you can adapt, and the package guard allowlist
+pipelines/               The scheduled run, the PR config-check gate and the package guard
+scripts/                 Work item governance, Teams notifications and the package guard (PowerShell + Pester)
 docs/                    The reasoning behind all of it
 skill/                   The same knowledge packaged for an AI coding agent
 tools/                   Checks that keep this repository honest, also run in CI
@@ -58,6 +59,9 @@ each. All of them are explained properly in [docs/pitfalls.md](docs/pitfalls.md)
   if those contain `##vso[...]` logging commands, the agent runs them — mid-line, too.
 - **The Dependency Dashboard does not work on Azure DevOps.** It needs issues with interactive
   checkboxes. Turn it off rather than relying on it.
+- **Renovate updates dead entries forever.** It never asks whether a `PackageVersion` is still
+  used. A [package guard](docs/package-hygiene.md) on every pull request keeps
+  `Directory.Packages.props` honest.
 
 ## Why Renovate
 

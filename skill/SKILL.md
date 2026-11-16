@@ -1,6 +1,6 @@
 ---
 name: renovate-azure-devops
-description: Configure, debug and review self-hosted Renovate on Azure DevOps Pipelines. Use when writing or changing renovate.json, building the Renovate pipeline, grouping dependency updates, fixing missing lock files in a Renovate pull request, investigating why an expected update never appears, or setting up work item tracking and run notifications. Covers NuGet with Central Package Management, npm, Bicep API versions, the .NET SDK, Node and Azure DevOps task versions. Triggers on 'renovate', 'renovate.json', 'dependency updates', 'dependency bot', 'renovate pipeline', 'packages.lock.json', 'NU1109', 'ERESOLVE', 'EOVERRIDE', 'artifact update problem', 'renovate-config-validator', 'dry-run', 'allowedVersions', 'packageRules', 'azure-pipelines-tasks'.
+description: Configure, debug and review self-hosted Renovate on Azure DevOps Pipelines. Use when writing or changing renovate.json, building the Renovate pipeline, grouping dependency updates, fixing missing lock files in a Renovate pull request, investigating why an expected update never appears, or setting up work item tracking and run notifications. Covers NuGet with Central Package Management, npm, Bicep API versions, the .NET SDK, Node and Azure DevOps task versions. Triggers on 'renovate', 'renovate.json', 'dependency updates', 'dependency bot', 'renovate pipeline', 'packages.lock.json', 'NU1109', 'ERESOLVE', 'EOVERRIDE', 'artifact update problem', 'renovate-config-validator', 'dry-run', 'allowedVersions', 'packageRules', 'azure-pipelines-tasks', 'package guard', 'package hygiene', 'Directory.Packages.props', 'dead PackageVersion', 'orphaned lock file', 'VersionOverride', 'CPM bypass'.
 ---
 
 # Renovate on Azure DevOps
@@ -64,6 +64,7 @@ only safe use of that variable.
 | Linking pull requests to work items | `azureWorkItemId` for a fixed link only; the work item script when dependency work must show up on the board per run and per pull request |
 | Cooldown | `minimumReleaseAge` in a package rule on `matchDatasources: ["npm", "nuget"]`, never top-level; internal packages exempted with `null` in a later rule. *Not yet confirmed by a production run* |
 | Framework majors | LTS only. Move the runtime-family bound and the SDK bound together, and extend the `SYSLIB` range in `.editorconfig` |
+| CPM bypasses (`Version`/`VersionOverride` in a project, CPM switched off) | Only with an allowlist entry that has a `reason`. The package guard fails everything else |
 | Build fails on a deprecation (`CS0618`, `SYSLIB`) | Pin below the version that introduced it (default), or a scoped `#pragma` with a work item id when the update is needed now. Never `NoWarn`, lowered severity or `SuppressMessage` |
 
 ## Things that fail silently
@@ -168,6 +169,7 @@ Work through this in order; the symptoms overlap.
 | Task or Bicep group gone after adding a cooldown, log says `do not have a releaseTimestamp` | `minimumReleaseAge` applied to datasources without timestamps |
 | `401` on `pkgs.dev.azure.com` and pull requests without lock files | The build service lacks Packaging Read on the feed |
 | Build validation red on `CS0618`/`CS0612`/`CS0672`/`SYSLIB` | A deprecation, not a configuration problem. Pin or scoped `#pragma` |
+| Package guard red with `[dead-entry]`, `[orphaned-lock-file]` or `[cpm-bypass]` | Fix on the default branch, not in the Renovate pull request. `-Fix` removes dead entries and orphaned lock files; bypasses need removal or an allowlist reason. See [../docs/package-hygiene.md](../docs/package-hygiene.md) |
 
 Full handling for each is in [../docs/working-with-prs.md](../docs/working-with-prs.md).
 
@@ -180,6 +182,9 @@ Full handling for each is in [../docs/working-with-prs.md](../docs/working-with-
   through pipeline variables and `RENOVATE_HOST_RULES`.
 - **Every pin needs an exit.** State the reason and the work item that lifts it in `description`, or
   it becomes permanent by accident.
+- **Removing a package means removing its `PackageVersion` too.** Run
+  `scripts/Test-PackageHygiene.ps1 -RepositoryRoot . -Fix` after dropping a reference; never
+  auto-fix a `pin-without-effect` warning, because the lock files change with it.
 
 ## Installing this skill
 
