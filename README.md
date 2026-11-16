@@ -112,6 +112,8 @@ From the same monorepo, each on its own:
   contexts, aggregates, domain events and the outbox in a working .NET solution.
 - [Entra ID app registrations as code](https://github.com/iverburgh/entra-app-registrations-as-code-playbook) —
   app registrations, roles and access as code.
+- [Circuit breakers on Azure Functions](https://github.com/iverburgh/azure-functions-circuit-breaker-playbook) —
+  a shared circuit breaker on Durable Entities, with a client library and a management console.
 
 ## License
 
