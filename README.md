@@ -114,6 +114,11 @@ From the same monorepo, each on its own:
   app registrations, roles and access as code.
 - [Circuit breakers on Azure Functions](https://github.com/iverburgh/azure-functions-circuit-breaker-playbook) —
   a shared circuit breaker on Durable Entities, with a client library and a management console.
+- [HTTP resilience in .NET](https://github.com/iverburgh/dotnet-http-resilience-playbook) —
+  retries, timeouts and outbound throttling for `HttpClient`.
+- [OpenTelemetry observability in .NET](https://github.com/iverburgh/dotnet-opentelemetry-observability-playbook) —
+  traces, metrics and logs with OpenTelemetry and Application Insights, including the exporter
+  defaults to re-check after an update.
 
 ## License
 
